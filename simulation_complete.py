@@ -7,6 +7,9 @@ import ttkbootstrap as tb
 from tkinter import ttk
 from tkinter import messagebox
 import math
+import os
+
+# --- MODULE 1: SIMULATION LOGIC  ---
 
 global_event_log = []
 
@@ -15,8 +18,6 @@ def generate_arrivals(env, arrival_rate_per_hour, total_clients, cashiers, servi
     for client_id in range(1, total_clients + 1):
         time_between_arrivals = random.expovariate(arrival_rate_per_hour)
         yield env.timeout(time_between_arrivals)
-
-        print(f"Tiempo {env.now:.2f}: Cliente {client_id} llegó y se formó.")
         global_event_log.append({
             "Time": env.now,
             "Client_ID": client_id,
@@ -29,17 +30,13 @@ def generate_arrivals(env, arrival_rate_per_hour, total_clients, cashiers, servi
 def serve_client(env, client_name, cashiers, service_time_in_hours):
     with cashiers.request() as req:
         yield req
-        print(f"Time {env.now:.2f}: {client_name} está siendo atendido.")
         global_event_log.append({
             "Time": env.now,
             "Client_ID": int(client_name.split(' ')[1]),
             "Event": "Service_Start"
         })
-
         actual_service_time = random.expovariate(1.0 / service_time_in_hours)
         yield env.timeout(actual_service_time)
-
-        print(f"Time {env.now:.2f}: {client_name} pagó y se fue.")
         global_event_log.append({
             "Time": env.now,
             "Client_ID": int(client_name.split(' ')[1]),
@@ -48,107 +45,196 @@ def serve_client(env, client_name, cashiers, service_time_in_hours):
 
 
 def run_simulation(num_cashiers, total_clients, lambda_val, mu_val):
-    """Configures and runs the SimPy environment. Returns the log as a DataFrame."""
     global global_event_log
     global_event_log = []
-    print(f"\n[PASO 1/2] Corriendo simulación matemática (SimPy)...")
+    print(f"\n[SIMPY] Corriendo simulación M/M/{num_cashiers}...")
     env = simpy.Environment()
-    print(f"Modelo de colas tipo M/M/{num_cashiers} inicializado.")
     cashiers = simpy.Resource(env, capacity=num_cashiers)
-
     service_time_in_hours = 1.0 / mu_val
-
     env.process(generate_arrivals(env, lambda_val, total_clients, cashiers, service_time_in_hours))
     env.run()
-    print("Simulación matemática completada.")
+    print("[SIMPY] Simulación completada.")
     if not global_event_log:
         return None
     return pd.DataFrame(global_event_log)
 
 
+# --- MODULE 2: VISUALIZATION LOGIC  ---
 
-WIDTH, HEIGHT = 800, 600
-TITLE = "Visualizador de Colas - Tienda Ara"  # <--- Texto en Español
+NATIVE_WIDTH, NATIVE_HEIGHT = 1536, 1024
+SCALE_FACTOR = 0.75
+SCREEN_WIDTH = int(NATIVE_WIDTH * SCALE_FACTOR)
+SCREEN_HEIGHT = int(NATIVE_HEIGHT * SCALE_FACTOR)
+
+TITLE = "Visualizador de Colas - Tienda Ara"
 FPS = 60
-WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-GREEN_ARA = (0, 105, 55)
-RED_ARA = (228, 0, 43)
-CLIENT_COLOR = (50, 150, 255)
-QUEUE_START_POS = (400, 500)
-QUEUE_SPACING_Y = -25
+GREEN_STATUS = (0, 255, 0, 150)
+RED_STATUS = (255, 0, 0, 150)
+
+IMAGE_PATH = "Imagenes"
+BG_IMAGE_FILE = os.path.join(IMAGE_PATH, "Fondo.png")
+CASHIER_IMAGE_FILE = os.path.join(IMAGE_PATH, "Empleado con sombrero rojo pixelado.png")
+CUSTOMER_M_IMAGE_FILE = os.path.join(IMAGE_PATH, "Captura de pantalla 2025-10-31 083808.png")
+CUSTOMER_F_IMAGE_FILE = os.path.join(IMAGE_PATH, "Cliente mujer.png")
+
+
+CASHIER_POSITIONS = [
+    (1130, 750),
+    (1280, 750),
+    (1130, 580),
+    (1280, 580)
+]
+CUSTOMER_AT_CASHIER_POS = [
+    (1130, 820),  #
+    (1280, 820),
+    (1130, 650),
+    (1280, 650)
+]
+QUEUE_START_POS = (750, 850)
+EXIT_POS = (1450, 200)
+QUEUE_SPACING_Y = -80
+STATUS_INDICATOR_POS = [
+    (1130, 730),
+    (1280, 730),
+    (1130, 560),
+    (1280, 560)
+]
+
+
+
 
 
 def run_visualizer(events_df, num_active_cashiers):
     if events_df is None or events_df.empty:
-        print("No hay eventos para visualizar. Saliendo.")
+        messagebox.showinfo("Sin datos", "No hay eventos para visualizar.")
         return
-    print(f"[PASO 2/2] Iniciando visualización (Pygame)...")
-
-    cashier_positions = [(200 + i * 100, 50) for i in range(num_active_cashiers)]
-    cashier_states = {i: "free" for i in range(num_active_cashiers)}
 
     pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    drawing_surface = pygame.Surface((NATIVE_WIDTH, NATIVE_HEIGHT))
     pygame.display.set_caption(TITLE)
     clock = pygame.time.Clock()
-    font = pygame.font.SysFont(None, 30)
-    clients, simulation_time, simulation_speed = {}, 0.0, 5.0
+    font = pygame.font.SysFont(None, 36)
+
+    try:
+        BACKGROUND_IMG = pygame.image.load(BG_IMAGE_FILE).convert()
+        BACKGROUND_IMG = pygame.transform.scale(BACKGROUND_IMG, (NATIVE_WIDTH, NATIVE_HEIGHT))
+
+        CASHIER_IMG = pygame.image.load(CASHIER_IMAGE_FILE).convert_alpha()
+        CASHIER_IMG = pygame.transform.scale(CASHIER_IMG, (70, 110))
+
+
+        CUSTOMER_M_IMG = pygame.image.load(CUSTOMER_M_IMAGE_FILE).convert_alpha()
+        CUSTOMER_M_IMG = pygame.transform.scale(CUSTOMER_M_IMG, (50, 80))  #
+
+        CUSTOMER_F_IMG = pygame.image.load(CUSTOMER_F_IMAGE_FILE).convert_alpha()
+        CUSTOMER_F_IMG = pygame.transform.scale(CUSTOMER_F_IMG, (50, 80))  #
+
+        CUSTOMER_IMAGES = [CUSTOMER_M_IMG, CUSTOMER_F_IMG]
+    except Exception as e:
+        messagebox.showerror("Error de carga", f"No se pudo cargar alguna imagen: {e}")
+        return
+
+    cashier_states = {i: "free" for i in range(num_active_cashiers)}
+    clients = {}
+    simulation_time = 0.0
+    simulation_speed_factor = 1.0
     current_event_index, num_events = 0, len(events_df)
 
     running = True
     while running:
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
+            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                 running = False
+
         dt_seconds = clock.get_time() / 1000.0
-        simulation_time += dt_seconds * simulation_speed
+        sim_minutes_passed = dt_seconds * simulation_speed_factor
+        simulation_time += sim_minutes_passed / 60.0
+
         while current_event_index < num_events:
             event = events_df.iloc[current_event_index]
             if event['Time'] <= simulation_time:
                 client_id, event_type = event['Client_ID'], event['Event']
+
                 if event_type == "Arrival":
                     clients_in_queue = event['Clients_in_Queue']
-                    pos_x, pos_y = QUEUE_START_POS[0], QUEUE_START_POS[1] + (clients_in_queue * QUEUE_SPACING_Y)
-                    clients[client_id] = {"id": client_id, "pos": (pos_x, pos_y), "state": "in_queue", "cashier_id": -1}
+                    pos_x = QUEUE_START_POS[0]
+                    pos_y = QUEUE_START_POS[1] + (clients_in_queue * QUEUE_SPACING_Y)
+                    client_image = random.choice(CUSTOMER_IMAGES)
+                    clients[client_id] = {
+                        "pos": (pos_x, pos_y),
+                        "target": None,
+                        "cashier_id": -1,
+                        "image": client_image,
+                        "leaving": False
+                    }
+
                 elif event_type == "Service_Start":
                     assigned_cashier = -1
                     for i in range(num_active_cashiers):
                         if cashier_states[i] == "free":
-                            cashier_states[i], assigned_cashier = client_id, i
+                            cashier_states[i] = client_id
+                            assigned_cashier = i
                             break
                     if assigned_cashier != -1:
-                        clients[client_id]["pos"] = cashier_positions[assigned_cashier]
-                        clients[client_id]["state"], clients[client_id]["cashier_id"] = "at_cashier", assigned_cashier
+                        clients[client_id]["target"] = CUSTOMER_AT_CASHIER_POS[assigned_cashier]
+                        clients[client_id]["cashier_id"] = assigned_cashier
+
                 elif event_type == "Exit":
                     cashier_id = clients[client_id]["cashier_id"]
                     if cashier_id != -1:
                         cashier_states[cashier_id] = "free"
-                    del clients[client_id]
+                    clients[client_id]["target"] = EXIT_POS
+                    clients[client_id]["leaving"] = True
+
                 current_event_index += 1
             else:
                 break
-        screen.fill(WHITE)
+
+        # Movimiento suave
+        for client_id, info in list(clients.items()):
+            if info["target"] is not None:
+                current_x, current_y = info["pos"]
+                target_x, target_y = info["target"]
+                dx, dy = target_x - current_x, target_y - current_y
+                distance = math.hypot(dx, dy)
+                if distance > 2:
+                    step = 5
+                    info["pos"] = (
+                        current_x + dx / distance * step,
+                        current_y + dy / distance * step
+                    )
+                else:
+                    info["pos"] = info["target"]
+                    if info["leaving"]:
+                        del clients[client_id]
+
+        drawing_surface.blit(BACKGROUND_IMG, (0, 0))
+
         for i in range(num_active_cashiers):
-            pos = cashier_positions[i]
-            cashier_color = RED_ARA if cashier_states[i] != "free" else GREEN_ARA
-            cashier_text = font.render(f"Caja {i + 1}", True, BLACK)  # <--- Texto en Español
-            screen.blit(cashier_text, (pos[0] - 30, pos[1] + 20))
-            pygame.draw.rect(screen, cashier_color, (pos[0] - 30, pos[1] - 10, 60, 20))
+            drawing_surface.blit(CASHIER_IMG, CASHIER_POSITIONS[i])
+            color = GREEN_STATUS if cashier_states[i] == "free" else RED_STATUS
+            pygame.draw.circle(drawing_surface, color, STATUS_INDICATOR_POS[i], 10)
 
-        for client_id, client_info in clients.items():
-            pos = client_info["pos"]
-            pygame.draw.circle(screen, CLIENT_COLOR, (int(pos[0]), int(pos[1])), 10)
+        for client_id, info in clients.items():
+            drawing_surface.blit(info["image"], info["pos"])
 
-        clock_text_str = f"Tiempo: {int(simulation_time // 60):02d}:{int(simulation_time % 60):02d}"  # <--- Texto en Español
-        clock_image = font.render(clock_text_str, True, RED_ARA)
-        screen.blit(clock_image, (10, 10))
+        total_sim_minutes = simulation_time * 60
+        sim_minutes_display = int(total_sim_minutes)
+        sim_seconds_display = int((total_sim_minutes * 60) % 60)
+        clock_text_str = f"Tiempo: {sim_minutes_display:02d}:{sim_seconds_display:02d}"
+        clock_image = font.render(clock_text_str, True, BLACK)
+        drawing_surface.blit(clock_image, (30, 30))
 
+        screen.fill(BLACK)
+        scaled_surface = pygame.transform.scale(drawing_surface, (SCREEN_WIDTH, SCREEN_HEIGHT))
+        screen.blit(scaled_surface, (0, 0))
         pygame.display.flip()
         clock.tick(FPS)
+
     pygame.quit()
     sys.exit()
-
 
 
 
@@ -174,177 +260,108 @@ def calculate_metrics(lambda_val, mu_val, s_val):
         Wq = Lq / lambda_val
         Ws = Wq + (1 / mu_val)
         Ls = lambda_val * Ws
-
-
-    Lq = max(0, Lq)
-    Ls = max(0, Ls)
-    Wq = max(0, Wq)
-    Ws = max(0, Ws)
-
     return {"rho": rho, "Lq": Lq, "Wq": Wq, "Ls": Ls, "Ws": Ws, "Po": Po}
 
 
 def format_time(decimal_hours):
-    """Converts a decimal hour value into a readable string (in Spanish)."""
-    # --- NUEVA VALIDACIÓN ---
-    # Si es 0 o negativo, muestra "0 segundos"
     if decimal_hours <= 0:
         return "0 segundos"
-
     total_seconds = int(decimal_hours * 3600)
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    seconds = total_seconds % 60
-
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
     if hours > 0:
-        return f"{hours} horas, {minutes} minutos, {seconds} segundos"
+        return f"{hours}h {minutes}m {seconds}s"
     elif minutes > 0:
-        return f"{minutes} minutos, {seconds} segundos"
+        return f"{minutes}m {seconds}s"
     else:
-        return f"{seconds} segundos"
+        return f"{seconds}s"
 
 
+# --- INTERFAZ PRINCIPAL ---
 
 class App(tb.Window):
     def __init__(self):
         super().__init__(themename="solar")
-        self.title("Sistema de simulación del Servicio de Cajas en Tiendas Ara")  # <--- Español
+        self.title("Simulación del Servicio de Cajas - Tienda Ara")
         self.geometry("600x550")
 
-        # 1. Main Title
-        title_label = ttk.Label(self, text="Sistema de simulación el Servicio de Cajas en Tiendas Ara",  # <--- Español
-                                font=("Georgia", 16, "bold"), wraplength=550, justify="center")
-        title_label.pack(pady=20, padx=20)
+        ttk.Label(self, text="Sistema de Simulación del Servicio de Cajas en Tienda Ara",
+                  font=("Georgia", 16, "bold"), wraplength=550, justify="center").pack(pady=20)
 
-        # 2. Configuration Card
-        config_frame = ttk.Labelframe(self, text="Parámetros del Sistema", bootstyle="warning",
-                                      padding=20)  # <--- Español
+        config_frame = ttk.Labelframe(self, text="Parámetros del Sistema", bootstyle="warning", padding=20)
         config_frame.pack(fill="x", pady=10, padx=20)
 
-        # --- Row 1: Server (Cashier) Configuration ---
-        cashiers_label = ttk.Label(config_frame, text="Número de cajeros activos (s):")  # <--- Español
-        cashiers_label.grid(row=0, column=0, padx=5, pady=10, sticky="w")
+        ttk.Label(config_frame, text="Número de cajeros (s):").grid(row=0, column=0, padx=5, pady=10, sticky="w")
         self.cashiers_combo = ttk.Combobox(config_frame, values=["1", "2", "3", "4"], state="readonly", width=10)
-        self.cashiers_combo.set("1")
+        self.cashiers_combo.set("2")
         self.cashiers_combo.grid(row=0, column=1, padx=5, pady=10)
 
-        # --- Row 2: Client (Limit) Configuration ---
-        clients_label = ttk.Label(config_frame, text="Clientes totales a simular:")  # <--- Español
-        clients_label.grid(row=1, column=0, padx=5, pady=10, sticky="w")
-        self.clients_combo = ttk.Combobox(config_frame, values=[str(i) for i in range(1, 16)], state="readonly",
+        ttk.Label(config_frame, text="Clientes a simular:").grid(row=1, column=0, padx=5, pady=10, sticky="w")
+        self.clients_combo = ttk.Combobox(config_frame, values=[str(i) for i in range(5, 31)], state="readonly",
                                           width=10)
         self.clients_combo.set("15")
         self.clients_combo.grid(row=1, column=1, padx=5, pady=10)
 
-        # --- Row 3: Arrival (Lambda) Configuration ---
-        arrival_label = ttk.Label(config_frame, text="Tiempo PROMEDIO entre llegadas:")  # <--- Español
-        arrival_label.grid(row=2, column=0, padx=5, pady=10, sticky="w")
-        self.arrival_spinbox = ttk.Spinbox(config_frame, from_=0.01, to=1000.0, increment=0.1, width=10)
-        self.arrival_spinbox.set("5")
-        self.arrival_spinbox.grid(row=2, column=1, padx=5, pady=10)
+        ttk.Label(config_frame, text="Tiempo entre llegadas:").grid(row=2, column=0, padx=5, pady=10, sticky="w")
+        self.arrival_spin = ttk.Spinbox(config_frame, from_=0.1, to=1000, increment=0.1, width=10)
+        self.arrival_spin.set("5")
+        self.arrival_spin.grid(row=2, column=1)
+        self.arrival_unit = ttk.Combobox(config_frame, values=["Segundos", "Minutos", "Horas"], state="readonly",
+                                         width=10)
+        self.arrival_unit.set("Minutos")
+        self.arrival_unit.grid(row=2, column=2)
 
-        self.arrival_unit_combo = ttk.Combobox(config_frame, values=["Segundos", "Minutos", "Horas"], state="readonly",
-                                               width=10)  # <--- Español
-        self.arrival_unit_combo.set("Minutos")
-        self.arrival_unit_combo.grid(row=2, column=2, padx=5, pady=10)
+        ttk.Label(config_frame, text="Tiempo de servicio:").grid(row=3, column=0, padx=5, pady=10, sticky="w")
+        self.service_spin = ttk.Spinbox(config_frame, from_=0.1, to=1000, increment=0.1, width=10)
+        self.service_spin.set("3")
+        self.service_spin.grid(row=3, column=1)
+        self.service_unit = ttk.Combobox(config_frame, values=["Segundos", "Minutos", "Horas"], state="readonly",
+                                         width=10)
+        self.service_unit.set("Minutos")
+        self.service_unit.grid(row=3, column=2)
 
-        # --- Row 4: Service (Mu) Configuration ---
-        service_label = ttk.Label(config_frame, text="Tiempo PROMEDIO de servicio:")  # <--- Español
-        service_label.grid(row=3, column=0, padx=5, pady=10, sticky="w")
-        self.service_spinbox = ttk.Spinbox(config_frame, from_=0.01, to=1000.0, increment=0.1, width=10)
-        self.service_spinbox.set("3")
-        self.service_spinbox.grid(row=3, column=1, padx=5, pady=10)
-
-        self.service_unit_combo = ttk.Combobox(config_frame, values=["Segundos", "Minutos", "Horas"], state="readonly",
-                                               width=10)  # <--- Español
-        self.service_unit_combo.set("Minutos")
-        self.service_unit_combo.grid(row=3, column=2, padx=5, pady=10)
-
-        # 5. Simulation Button
-        self.start_button = ttk.Button(self, text="Hacer simulación", command=self.start_simulation,
-                                       bootstyle="warning-outline", width=25)  # <--- Español
-        self.start_button.pack(pady=30)
+        ttk.Button(self, text="Iniciar Simulación", command=self.start_simulation,
+                   bootstyle="warning-outline", width=25).pack(pady=30)
 
     def start_simulation(self):
         try:
-            # 1. Get values from the GUI
             s_val = int(self.cashiers_combo.get())
             total_clients = int(self.clients_combo.get())
-            arrival_val = float(self.arrival_spinbox.get())
-            arrival_unit = self.arrival_unit_combo.get()
-            service_val = float(self.service_spinbox.get())
-            service_unit = self.service_unit_combo.get()
+            arrival_val = float(self.arrival_spin.get())
+            service_val = float(self.service_spin.get())
+            arrival_unit = self.arrival_unit.get()
+            service_unit = self.service_unit.get()
 
-            if arrival_val <= 0 or service_val <= 0:
-                messagebox.showerror("Error de Entrada", "Los tiempos de llegada y servicio deben ser mayores que 0.")
-                return
+            arrival_hours = arrival_val / (
+                3600 if arrival_unit == "Segundos" else 60 if arrival_unit == "Minutos" else 1)
+            service_hours = service_val / (
+                3600 if service_unit == "Segundos" else 60 if service_unit == "Minutos" else 1)
+            lambda_val = 1 / arrival_hours
+            mu_val = 1 / service_hours
 
-            # 2. Convert Times to HOURLY Rates
-            if arrival_unit == "Segundos":
-                time_between_arrivals_hours = arrival_val / 3600
-            elif arrival_unit == "Minutos":
-                time_between_arrivals_hours = arrival_val / 60
-            else:  # Horas
-                time_between_arrivals_hours = arrival_val
-            lambda_val = 1.0 / time_between_arrivals_hours
-
-            if service_unit == "Segundos":
-                service_time_hours = service_val / 3600
-            elif service_unit == "Minutos":
-                service_time_hours = service_val / 60
-            else:  # Horas
-                service_time_hours = service_val
-            mu_val = 1.0 / service_time_hours
-
-            # 3. Validate System Stability
             if lambda_val >= (s_val * mu_val):
-                # Mensaje de error en Español
-                messagebox.showerror("Sistema Inestable",
-                                     f"Error: La tasa de llegada (λ ≈ {lambda_val:.2f} cl/hr) es mayor o igual a la tasa de servicio total (s*μ ≈ {s_val * mu_val:.2f} cl/hr).\n\n"
-                                     "El sistema es INESTABLE (ρ >= 1) y la cola crecería infinitamente.\n\n"
-                                     "Por favor, aumente el número de cajeros o el tiempo de servicio.")
+                messagebox.showerror("Sistema Inestable", "ρ ≥ 1. Aumenta cajeros o reduce llegadas.")
                 return
 
-                # 4. Calculate Theoretical Metrics
             metrics = calculate_metrics(lambda_val, mu_val, s_val)
             if not metrics:
-                messagebox.showerror("Error",
-                                     "No se pudieron calcular las métricas. Revise los parámetros.")  # <--- Español
+                messagebox.showerror("Error", "No se pudieron calcular las métricas.")
                 return
 
-            # 5. Create and Show Results Popup Window
-            # Mensaje de resultados
-            results_string = (
-                f"--- Resultados Teóricos del Modelo M/M/{s_val} ---\n\n"
-                f"Parámetros del Sistema:\n"
-                f"  λ (Tasa de Llegada): {lambda_val:.2f} clientes/hora\n"
-                f"  μ (Tasa de Servicio): {mu_val:.2f} clientes/hora\n"
-                f"  s (Servidores): {s_val}\n\n"
-                f"Métricas de Rendimiento:\n"
-                f"  ρ (Factor de Utilización): {metrics['rho'] * 100:.2f} %\n"
-                f"  Po (Prob. Sistema Vacío): {metrics['Po'] * 100:.2f} %\n\n"
-                f"  Lq (Clientes en Cola): {metrics['Lq']:.2f} clientes\n"
-                f"  Ls (Clientes en Sistema): {metrics['Ls']:.2f} clientes\n\n"
-                f"  Wq (Tiempo en Cola): {format_time(metrics['Wq'])}\n"
-                f"  Ws (Tiempo en Sistema): {format_time(metrics['Ws'])}\n"
+            results = (
+                f"--- Resultados Teóricos ---\n\n"
+                f"ρ = {metrics['rho'] * 100:.2f}%\n"
+                f"Po = {metrics['Po'] * 100:.2f}%\n"
+                f"Lq = {metrics['Lq']:.2f}\nLs = {metrics['Ls']:.2f}\n"
+                f"Wq = {format_time(metrics['Wq'])}\nWs = {format_time(metrics['Ws'])}"
             )
+            messagebox.showinfo("Resultados", results)
 
-            messagebox.showinfo("Resultados Teóricos de la Simulación", results_string)  
-
-            # 6. If all is well, close the menu and run the simulation
-            self.destroy()  # Closes the menu window
-
-            # --- CALL THE SIMULATION CODE  ---
-            event_log = run_simulation(s_val, total_clients, lambda_val, mu_val)
-
-            # --- CALL THE VISUALIZATION  ---
-            run_visualizer(event_log, s_val)
-
-        except ValueError:
-            messagebox.showerror("Error de Entrada",
-                                 "Por favor, ingrese solo números válidos en los campos de tiempo.")
-        except KeyboardInterrupt:
-            print("Simulación cancelada.")
+            self.destroy()
+            df = run_simulation(s_val, total_clients, lambda_val, mu_val)
+            run_visualizer(df, s_val)
+        except Exception as e:
+            messagebox.showerror("Error", f"Ocurrió un error: {e}")
 
 
 if __name__ == "__main__":
