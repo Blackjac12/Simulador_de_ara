@@ -9,6 +9,21 @@ from tkinter import messagebox
 import math
 import os
 
+
+# --- PARA PYINSTALLER ---
+def resource_path(relative_path):
+
+    if hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
+    else:
+
+        base_path = os.path.abspath(os.path.dirname(sys.argv[0]))
+
+    return os.path.join(base_path, relative_path)
+
+
+
+
 # --- MODULE 1: SIMULATION LOGIC  ---
 
 global_event_log = []
@@ -73,10 +88,11 @@ GREEN_STATUS = (0, 255, 0, 150)
 RED_STATUS = (255, 0, 0, 150)
 
 IMAGE_PATH = "Imagenes"
-BG_IMAGE_FILE = os.path.join(IMAGE_PATH, "Fondo.png")
-CASHIER_IMAGE_FILE = os.path.join(IMAGE_PATH, "Empleado con sombrero rojo pixelado.png")
-CUSTOMER_M_IMAGE_FILE = os.path.join(IMAGE_PATH, "Captura de pantalla 2025-10-31 083808.png")
-CUSTOMER_F_IMAGE_FILE = os.path.join(IMAGE_PATH, "Cliente mujer.png")
+BG_IMAGE_FILE = resource_path(os.path.join(IMAGE_PATH, "Fondo.png"))
+CASHIER_IMAGE_FILE = resource_path(os.path.join(IMAGE_PATH, "Empleado con sombrero rojo pixelado.png"))
+CUSTOMER_M_IMAGE_FILE = resource_path(os.path.join(IMAGE_PATH, "Captura de pantalla 2025-10-31 083808.png"))
+CUSTOMER_F_IMAGE_FILE = resource_path(os.path.join(IMAGE_PATH, "Cliente mujer.png"))
+
 
 
 CASHIER_POSITIONS = [
@@ -86,7 +102,7 @@ CASHIER_POSITIONS = [
     (1280, 580)
 ]
 CUSTOMER_AT_CASHIER_POS = [
-    (1130, 820),  #
+    (1130, 820),
     (1280, 820),
     (1130, 650),
     (1280, 650)
@@ -100,10 +116,6 @@ STATUS_INDICATOR_POS = [
     (1130, 560),
     (1280, 560)
 ]
-
-
-
-
 
 def run_visualizer(events_df, num_active_cashiers):
     if events_df is None or events_df.empty:
@@ -126,10 +138,10 @@ def run_visualizer(events_df, num_active_cashiers):
 
 
         CUSTOMER_M_IMG = pygame.image.load(CUSTOMER_M_IMAGE_FILE).convert_alpha()
-        CUSTOMER_M_IMG = pygame.transform.scale(CUSTOMER_M_IMG, (50, 80))  #
+        CUSTOMER_M_IMG = pygame.transform.scale(CUSTOMER_M_IMG, (50, 80))
 
         CUSTOMER_F_IMG = pygame.image.load(CUSTOMER_F_IMAGE_FILE).convert_alpha()
-        CUSTOMER_F_IMG = pygame.transform.scale(CUSTOMER_F_IMG, (50, 80))  #
+        CUSTOMER_F_IMG = pygame.transform.scale(CUSTOMER_F_IMG, (50, 80))
 
         CUSTOMER_IMAGES = [CUSTOMER_M_IMG, CUSTOMER_F_IMG]
     except Exception as e:
@@ -237,7 +249,6 @@ def run_visualizer(events_df, num_active_cashiers):
     sys.exit()
 
 
-
 def calculate_metrics(lambda_val, mu_val, s_val):
     rho = lambda_val / (s_val * mu_val)
     if s_val == 1:
@@ -267,6 +278,7 @@ def format_time(decimal_hours):
     if decimal_hours <= 0:
         return "0 segundos"
     total_seconds = int(decimal_hours * 3600)
+    # Corrección: Uso de 'divmod' (sin guion bajo)
     hours, remainder = divmod(total_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
     if hours > 0:
@@ -277,7 +289,7 @@ def format_time(decimal_hours):
         return f"{seconds}s"
 
 
-# --- INTERFAZ PRINCIPAL ---
+# --- INTERFAZ PRINCIPAL (TTKBOOTSTRAP) ---
 
 class App(tb.Window):
     def __init__(self):
@@ -300,7 +312,8 @@ class App(tb.Window):
         self.clients_combo = ttk.Combobox(config_frame, values=[str(i) for i in range(5, 31)], state="readonly",
                                           width=10)
         self.clients_combo.set("15")
-        self.clients_combo.grid(row=1, column=1, padx=5, pady=10)
+        # Corrección: El valor de pady debe ser un número (10), no una letra (1O)
+        self.clients_combo.grid(row=1, column=1, padx=5, pady=10)  # <-- Línea 328 corregida
 
         ttk.Label(config_frame, text="Tiempo entre llegadas:").grid(row=2, column=0, padx=5, pady=10, sticky="w")
         self.arrival_spin = ttk.Spinbox(config_frame, from_=0.1, to=1000, increment=0.1, width=10)
